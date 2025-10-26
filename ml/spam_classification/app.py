@@ -250,16 +250,16 @@ def main():
                 comp_df = pd.DataFrame(comp_rows, columns=["model", "accuracy", "f1_weighted"]).set_index("model")
                 st.table(comp_df)
                 st.bar_chart(comp_df)
-                        # show top-features for each model if available
-                        st.subheader("Top features per model (approx.)")
-                        for name, _, _ in comp_rows:
-                            model_file = ARTIFACTS / ("svm_baseline.joblib" if name == "SVM" else "logreg_baseline.joblib")
-                            if model_file.exists():
-                                m = joblib.load(model_file)
-                                tf = top_features_from_model(m, n=20)
-                                if tf:
-                                    st.write(f"Top features for {name}:")
-                                    st.table(pd.DataFrame(tf, columns=["feature", "coef"]))
+                # show top-features for each model if available
+                st.subheader("Top features per model (approx.)")
+                for name, _, _ in comp_rows:
+                    model_file = ARTIFACTS / ("svm_baseline.joblib" if name == "SVM" else "logreg_baseline.joblib")
+                    if model_file.exists():
+                        m = joblib.load(model_file)
+                        tf = top_features_from_model(m, n=20)
+                        if tf:
+                            st.write(f"Top features for {name}:")
+                            st.table(pd.DataFrame(tf, columns=["feature", "coef"]))
 
     st.header("Try a sample message")
     user_text = st.text_area("Enter SMS / email text to classify", value="Free entry: claim your prize now!")
