@@ -9,13 +9,16 @@ independent implementation that uses the project's own pipeline
 and artifacts.
 """
 from pathlib import Path
+import io
 import json
 import subprocess
 
 import joblib
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 import streamlit as st
+from sklearn.feature_extraction.text import CountVectorizer
 
 
 BASE = Path(__file__).resolve().parent
@@ -58,6 +61,33 @@ def plot_confusion(cm, labels):
     return fig
 
 
+def plot_label_distribution(df: pd.DataFrame):
+    fig, ax = plt.subplots(figsize=(4, 3))
+    counts = df["label"].value_counts()
+    sns.barplot(x=counts.index, y=counts.values, ax=ax)
+    ax.set_ylabel("Count")
+    ax.set_xlabel("Label")
+    return fig
+
+
+def plot_length_histogram(df: pd.DataFrame):
+    fig, ax = plt.subplots(figsize=(5, 3))
+    lengths = df["text"].fillna("").str.len()
+    sns.histplot(lengths, bins=30, ax=ax)
+    ax.set_xlabel("Message length")
+    return fig
+
+
+def top_n_words(df: pd.DataFrame, n=20):
+    texts = df["text"].fillna("")
+    cv = CountVectorizer(stop_words="english", max_features=10000)
+    X = cv.fit_transform(texts)
+    sums = X.sum(axis=0).A1
+    terms = cv.get_feature_names_out()
+    top_idx = sums.argsort()[::-1][:n]
+    return [(terms[i], int(sums[i])) for i in top_idx]
+
+
 def main():
     st.title("Spam Classification — Demo (Phase 2)")
     st.write("A simple Streamlit interface for the spam classification pipeline.")
@@ -79,6 +109,46 @@ def main():
             if cm:
                 fig = plot_confusion(cm, labels=["ham", "spam"])
                 st.pyplot(fig)
+
+    # Data / batch upload area
+    st.header("Data & Batch Prediction")
+    uploaded = st.file_uploader("Upload CSV for batch prediction (must contain a 'text' column)", type=["csv"]) 
+    sample_df = None
+    if uploaded is not None:
+        try:
+            sample_df = pd.read_csv(uploaded)
+        except Exception as e:
+            st.error(f"Failed to read uploaded CSV: {e}")
+            sample_df = None
+
+    # If no upload, try load local dataset (if present) for visualizations
+    local_data = None
+    data_path = BASE / "data" / "sms_spam_no_header.csv"
+    if sample_df is None and data_path.exists():
+        try:
+            # load without header expecting label,text
+            df_local = pd.read_csv(data_path, header=None, encoding="utf-8")
+            df_local = df_local.iloc[:, :2]
+            df_local.columns = ["label", "text"]
+            df_local["label"] = df_local["label"].astype(str).str.strip().str.lower()
+            local_data = df_local
+        except Exception:
+            local_data = None
+
+    df_for_vis = sample_df if sample_df is not None else local_data
+    if df_for_vis is not None:
+        st.subheader("Dataset preview")
+        st.dataframe(df_for_vis.head(10))
+        st.subheader("Label distribution")
+        st.pyplot(plot_label_distribution(df_for_vis))
+        st.subheader("Message length distribution")
+        st.pyplot(plot_length_histogram(df_for_vis))
+        st.subheader("Top words (approx.)")
+        top_words = top_n_words(df_for_vis, n=20)
+        st.table(pd.DataFrame(top_words, columns=["word", "count"]))
+
+    with col2:
+        st.header("Model")
 
     with col2:
         st.header("Model")
@@ -114,6 +184,24 @@ def main():
                 st.write(f"Decision function score: {score[0]:.4f}")
             except Exception:
                 pass
+
+    # Batch prediction: if uploaded CSV with 'text' column
+    if sample_df is not None:
+        if "text" not in sample_df.columns:
+            st.error("Uploaded CSV must have a 'text' column for predictions.")
+        else:
+            st.subheader("Batch prediction")
+            if MODEL_PATH.exists():
+                model = load_model()
+                texts = sample_df["text"].fillna("").astype(str).tolist()
+                preds = model.predict(texts)
+                out_df = sample_df.copy()
+                out_df["prediction"] = preds
+                st.dataframe(out_df.head(20))
+                csv = out_df.to_csv(index=False).encode("utf-8")
+                st.download_button("Download predictions (CSV)", csv, file_name="predictions.csv", mime="text/csv")
+            else:
+                st.error("No model found — train the baseline model first to run batch predictions.")
 
     st.markdown("---")
     st.caption("Implementation: Phase 2 Streamlit demo — independent implementation inspired by external example.")

@@ -43,3 +43,8 @@ The app will show evaluation metrics, a confusion matrix, and allow single-messa
 Notes
 - The Streamlit app is a demo wrapper around the Phase 1 pipeline and is implemented as an independent solution (inspired by the referenced example repository but not copied).
 - For CI or production usage, consider running training outside the Streamlit process and serving a lightweight prediction API instead.
+
+Batch predictions & visualizations
+
+- The Streamlit app also supports uploading a CSV with a `text` column for batch predictions. After uploading the CSV you can preview the data, run batch predictions and download a CSV with an added `prediction` column.
+- If you don't upload a CSV, the app will attempt to load the local dataset (if present) to show example visualizations: label distribution, message length histogram, and top words.
