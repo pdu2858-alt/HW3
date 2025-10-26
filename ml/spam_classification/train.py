@@ -125,6 +125,7 @@ def parse_args():
     p.add_argument("--artifacts-dir", default="artifacts")
     p.add_argument("--model-name", default="svm_baseline.joblib")
     p.add_argument("--report-name", default="eval_baseline.json")
+    p.add_argument("--model", choices=["svm", "logreg"], default="svm")
     return p.parse_args()
 
 
