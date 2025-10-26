@@ -38,7 +38,31 @@ def download_if_missing(url: str, dest: Path):
 
 
 def load_dataset(path: Path) -> pd.DataFrame:
-    # dataset has no header; expected two columns: label, text
+    # Try reading with header: many processed outputs include a header row
+    df = pd.read_csv(path, encoding="utf-8")
+    # If header contains label/text columns, use them
+    cols = [c.lower() for c in df.columns]
+    if "label" in cols or "text" in cols or "text_clean" in cols:
+        # prefer text_clean, then text
+        if "text_clean" in cols:
+            text_col = df.columns[cols.index("text_clean")]
+        elif "text" in cols:
+            text_col = df.columns[cols.index("text")]
+        else:
+            # fallback to second column
+            text_col = df.columns[1]
+
+        if "label" in cols:
+            label_col = df.columns[cols.index("label")]
+        else:
+            label_col = df.columns[0]
+
+        out = pd.DataFrame()
+        out["label"] = df[label_col].astype(str).str.strip().str.lower()
+        out["text"] = df[text_col].astype(str)
+        return out
+
+    # fallback: dataset has no header; expected two columns: label, text
     df = pd.read_csv(path, header=None, encoding="utf-8")
     if df.shape[1] < 2:
         raise ValueError("Expected at least 2 columns (label, text)")
