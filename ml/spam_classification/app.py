@@ -107,6 +107,42 @@ def top_n_words(df: pd.DataFrame, n=20):
     return [(terms[i], int(sums[i])) for i in top_idx]
 
 
+def top_features_from_model(model, n=20):
+    """Extract top features (words) for the positive class from a linear pipeline.
+
+    Works for pipeline with a vectorizer named 'tfidf' and linear classifier with coef_.
+    Returns list of (feature, coef) sorted by coef descending.
+    """
+    try:
+        # assume pipeline: tfidf, clf
+        vect = None
+        clf = None
+        if hasattr(model, "named_steps"):
+            vect = model.named_steps.get("tfidf")
+            clf = model.named_steps.get("clf")
+        else:
+            # try attributes
+            vect = model[0]
+            clf = model[1]
+
+        feature_names = vect.get_feature_names_out()
+        coefs = None
+        if hasattr(clf, "coef_"):
+            coefs = clf.coef_
+        elif hasattr(clf, "decision_function") and hasattr(clf, "coef_"):
+            coefs = clf.coef_
+
+        if coefs is None:
+            return []
+
+        # for binary classification sklearn stores shape (1, n_features) for coef_
+        coef = coefs[0] if coefs.ndim == 2 and coefs.shape[0] == 1 else coefs[0]
+        idx = coef.argsort()[::-1][:n]
+        return [(feature_names[i], float(coef[i])) for i in idx]
+    except Exception:
+        return []
+
+
 def main():
     st.title("Spam Classification — Demo (Phase 2)")
     st.write("A simple Streamlit interface for the spam classification pipeline.")
@@ -214,6 +250,16 @@ def main():
                 comp_df = pd.DataFrame(comp_rows, columns=["model", "accuracy", "f1_weighted"]).set_index("model")
                 st.table(comp_df)
                 st.bar_chart(comp_df)
+                        # show top-features for each model if available
+                        st.subheader("Top features per model (approx.)")
+                        for name, _, _ in comp_rows:
+                            model_file = ARTIFACTS / ("svm_baseline.joblib" if name == "SVM" else "logreg_baseline.joblib")
+                            if model_file.exists():
+                                m = joblib.load(model_file)
+                                tf = top_features_from_model(m, n=20)
+                                if tf:
+                                    st.write(f"Top features for {name}:")
+                                    st.table(pd.DataFrame(tf, columns=["feature", "coef"]))
 
     st.header("Try a sample message")
     user_text = st.text_area("Enter SMS / email text to classify", value="Free entry: claim your prize now!")
