@@ -51,7 +51,18 @@ def load_dataset(path: Path) -> pd.DataFrame:
 
 def train(args):
     data_path = Path(args.data_path)
-    download_if_missing(args.data_url, data_path)
+    # Prefer repository processed dataset if present and if user didn't explicitly pass an existing path
+    repo_root = Path(__file__).resolve().parents[2]
+    processed_candidate = repo_root / "datasets" / "processed" / "sms_spam_clean.csv"
+    if (not data_path.exists()) and processed_candidate.exists():
+        print(f"Using processed dataset at {processed_candidate} instead of {data_path}")
+        data_path = processed_candidate
+
+    # If the chosen data_path doesn't exist, try downloading the raw CSV to the provided path
+    if not data_path.exists():
+        download_if_missing(args.data_url, data_path)
+    else:
+        print(f"Using dataset at {data_path}")
     df = load_dataset(data_path)
     X = df["text"].fillna("")
     y = df["label"]
