@@ -17,6 +17,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
+from sklearn.linear_model import LogisticRegression
 
 
 DEFAULT_URL = (
@@ -59,9 +60,18 @@ def train(args):
         X, y, test_size=args.test_size, random_state=42, stratify=y
     )
 
+    # Select model
+    if args.model == "svm":
+        clf = LinearSVC(random_state=42, max_iter=10000)
+    elif args.model == "logreg":
+        # use saga solver to handle larger feature spaces; max_iter increased
+        clf = LogisticRegression(random_state=42, max_iter=2000, solver="saga")
+    else:
+        raise ValueError("Unsupported model type: choose 'svm' or 'logreg'")
+
     pipeline = Pipeline([
         ("tfidf", TfidfVectorizer(max_features=10000)),
-        ("clf", LinearSVC(random_state=42, max_iter=10000)),
+        ("clf", clf),
     ])
 
     print("Training baseline LinearSVC...")
@@ -79,8 +89,16 @@ def train(args):
 
     artifacts_dir = Path(args.artifacts_dir)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    # adjust default model/report names for logistic regression if user did not override
+    model_name = args.model_name
+    report_name = args.report_name
+    if args.model == "logreg":
+        if model_name == "svm_baseline.joblib":
+            model_name = "logreg_baseline.joblib"
+        if report_name == "eval_baseline.json":
+            report_name = "eval_logreg.json"
 
-    model_path = artifacts_dir / args.model_name
+    model_path = artifacts_dir / model_name
     joblib.dump(pipeline, model_path)
     print(f"Saved model to {model_path}")
 
@@ -94,8 +112,7 @@ def train(args):
         "n_train": int(len(X_train)),
         "n_test": int(len(X_test)),
     }
-
-    report_path = artifacts_dir / args.report_name
+    report_path = artifacts_dir / report_name
     report_path.write_text(json.dumps(eval, indent=2))
     print(f"Wrote evaluation report to {report_path}")
 

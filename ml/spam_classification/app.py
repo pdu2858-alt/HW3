@@ -42,6 +42,25 @@ def run_training():
     return proc.returncode
 
 
+def run_training_model(model_type: str):
+    cmd = [
+        "python3",
+        str(BASE / "train.py"),
+        "--data-path",
+        str(BASE / "data" / "sms_spam_no_header.csv"),
+        "--artifacts-dir",
+        str(ARTIFACTS),
+        "--model",
+        model_type,
+    ]
+    st.info(f"Running training for {model_type} — this may take a while. Output will appear below.")
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    for line in proc.stdout:
+        st.write(line.rstrip())
+    proc.wait()
+    return proc.returncode
+
+
 def load_model():
     return joblib.load(MODEL_PATH)
 
@@ -168,6 +187,33 @@ def main():
                     st.success("Training finished — model and evaluation saved.")
                 else:
                     st.error(f"Training failed (exit code {code}). Check logs above.")
+
+    # Button to train logistic regression and compare
+    if st.button("Train Logistic Regression and compare"):
+        code = run_training_model("logreg")
+        if code != 0:
+            st.error(f"Logistic training failed (exit code {code}).")
+        else:
+            st.success("Logistic Regression training finished.")
+            # load both evaluations (svm and logreg) if present
+            svm_eval = load_eval()
+            logreg_eval = None
+            logreg_path = ARTIFACTS / "eval_logreg.json"
+            if logreg_path.exists():
+                with open(logreg_path, "r", encoding="utf-8") as f:
+                    logreg_eval = json.load(f)
+
+            st.subheader("Comparison")
+            comp_rows = []
+            if svm_eval is not None:
+                comp_rows.append(("SVM", svm_eval.get("accuracy"), svm_eval.get("f1_weighted")))
+            if logreg_eval is not None:
+                comp_rows.append(("LogReg", logreg_eval.get("accuracy"), logreg_eval.get("f1_weighted")))
+
+            if comp_rows:
+                comp_df = pd.DataFrame(comp_rows, columns=["model", "accuracy", "f1_weighted"]).set_index("model")
+                st.table(comp_df)
+                st.bar_chart(comp_df)
 
     st.header("Try a sample message")
     user_text = st.text_area("Enter SMS / email text to classify", value="Free entry: claim your prize now!")
