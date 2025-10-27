@@ -198,6 +198,41 @@ def main():
         else:
             st.sidebar.warning("Processed dataset not found in repo. Upload a CSV or disable the checkbox.")
 
+    # Auto-detect best text and label columns when possible
+    effective_text_col = None
+    effective_label_col = None
+    if df is not None:
+        # prefer user-specified sidebar values, then common names
+        candidates_text = [text_col, 'text_clean', 'text', 'message', 'body']
+        for c in candidates_text:
+            if c in df.columns:
+                effective_text_col = c
+                break
+        if effective_text_col is None:
+            # fallback to first string-like column
+            for c in df.columns:
+                if pd.api.types.is_string_dtype(df[c]):
+                    effective_text_col = c
+                    break
+        if effective_text_col is None:
+            effective_text_col = df.columns[0]
+
+        candidates_label = [label_col, 'label', 'target', 'y']
+        for c in candidates_label:
+            if c in df.columns:
+                effective_label_col = c
+                break
+        # if no label col found, leave None (some demos may be unlabeled)
+        if effective_label_col is None:
+            effective_label_col = None
+
+        # Surface the detected choices in the sidebar for clarity
+        st.sidebar.markdown(f"**Detected text column:** `{effective_text_col}`")
+        st.sidebar.markdown(f"**Detected label column:** `{effective_label_col if effective_label_col is not None else 'none'}`")
+        # replace local pointers for downstream code
+        text_col = effective_text_col
+        label_col = effective_label_col or label_col
+
     # Layout: tabs to surface key sections on the homepage
     tab_overview, tab_model, tab_infer = st.tabs(["Overview", "Model", "Live Inference"])
 
