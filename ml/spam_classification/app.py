@@ -198,10 +198,11 @@ def main():
         else:
             st.sidebar.warning("Processed dataset not found in repo. Upload a CSV or disable the checkbox.")
 
-    # Layout
-    left, right = st.columns([2, 1])
+    # Layout: tabs to surface key sections on the homepage
+    tab_overview, tab_model, tab_infer = st.tabs(["Overview", "Model", "Live Inference"])
 
-    with left:
+    # Overview tab: dataset preview, class distribution, top tokens, token replacements
+    with tab_overview:
         st.subheader("Data overview")
         if df is None:
             st.info("No dataset loaded. Upload a CSV or enable the repo processed dataset.")
@@ -209,8 +210,9 @@ def main():
         else:
             with st.expander("Show dataset (first 200 rows)"):
                 st.dataframe(df.head(200))
+
             if text_col in df.columns and label_col in df.columns:
-                st.markdown("**Label distribution**")
+                st.markdown("### Class distribution")
                 st.pyplot(plot_label_distribution(pd.DataFrame({'label': df[label_col]})))
                 st.markdown(f"**Rows:** {len(df):,}")
 
@@ -218,13 +220,13 @@ def main():
                 top = top_n_words(df, text_col=text_col, n=20)
                 tokens, counts = zip(*top) if top else ([], [])
                 fig, ax = plt.subplots(figsize=(6, 3))
-                ax.barh(tokens[::-1], counts[::-1], color="#2b8cbe")
+                ax.barh(tokens[::-1], counts[::-1], color=PALETTE['primary'])
                 ax.set_xlabel("count")
                 plt.tight_layout()
                 st.pyplot(fig)
 
                 # quick density by length
-                st.markdown("**Message length distribution**")
+                st.markdown("### Message length distribution")
                 lengths = df[text_col].fillna("").astype(str).map(len)
                 fig2, ax2 = plt.subplots(figsize=(6, 2))
                 ax2.hist(lengths, bins=30, color=PALETTE['accent'])
@@ -233,74 +235,53 @@ def main():
                 st.pyplot(fig2)
 
                 # Token replacements (approximate)
-                st.markdown("**Token replacements in cleaned text (approximate)**")
+                st.markdown("### Token replacements in cleaned text (approximate)")
                 sample_rows = df[text_col].dropna().astype(str).head(8).tolist()
                 cleaned = [clean_steps_for_display(t) for t in sample_rows]
                 clean_df = pd.DataFrame(cleaned)
                 st.table(clean_df)
 
                 # Top tokens by class
-                st.markdown("**Top tokens by class**")
+                st.markdown("### Top tokens by class")
                 try:
                     by_label = top_n_words_by_label(df, label_col=label_col, text_col=text_col, n=15)
                     for lbl, toks in by_label.items():
-                        st.markdown(f"*{lbl}*")
+                        st.markdown(f"**{lbl}**")
                         tdf = pd.DataFrame(toks, columns=['token', 'count'])
                         st.table(tdf)
                 except Exception:
-                    pass
+                    st.info("Failed to compute top tokens by class.")
 
-    with right:
-        st.subheader("Model & Live Inference")
-        if model_choice:
-            selected = Path(models_dir) / model_choice
-            st.markdown(f"**Selected model:** `{model_choice}`")
-        else:
-            selected = None
-            st.info("No model artifact selected in sidebar")
+    # Model tab: metrics, confusion, ROC/PR, threshold sweep, classification report
+    with tab_model:
+        st.subheader("Model Performance & Evaluation")
+        selected = Path(models_dir) / model_choice if model_choice else None
+        if selected is None or not selected.exists():
+            st.info("No model artifact selected or found. Select a .joblib model in the sidebar to see saved evaluation.")
 
-        # helper to render small metric card
-        def _metric_card(title, value, color=None):
-            color = color or PALETTE['primary']
-            st.markdown(
-                f"<div style='background: white; padding:10px; border-radius:8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);'>"
-                f"<div style='font-size:12px;color:{PALETTE['muted']}'>{title}</div>"
-                f"<div style='font-size:20px;font-weight:700;color:{color}'>{value}</div>"
-                f"</div>", unsafe_allow_html=True
-            )
-
-        # show saved eval if present
         eval_data = load_eval()
-        if eval_data:
+        if not eval_data:
+            st.info("No saved evaluation found (eval_baseline.json). Train a model or place an evaluation file in artifacts/.")
+        else:
             acc = eval_data.get('accuracy')
             prec = eval_data.get('precision')
             rec = eval_data.get('recall')
-            # show top-level metrics using Streamlit's native metric UI for compactness
             c1, c2, c3 = st.columns(3)
-            try:
-                with c1:
-                    st.metric(label="Accuracy", value=f"{acc:.3f}" if acc is not None else "N/A")
-                with c2:
-                    st.metric(label="Precision", value=f"{prec:.3f}" if prec is not None else "N/A")
-                with c3:
-                    st.metric(label="Recall", value=f"{rec:.3f}" if rec is not None else "N/A")
-            except Exception:
-                # fallback to the old card if st.metric fails for some reason
-                with c1:
-                    _metric_card('Accuracy', f"{acc:.4f}" if acc is not None else "N/A", color=PALETTE['primary'])
-                with c2:
-                    _metric_card('Precision', f"{prec:.4f}" if prec is not None else "N/A", color=PALETTE['accent'])
-                with c3:
-                    _metric_card('Recall', f"{rec:.4f}" if rec is not None else "N/A", color=PALETTE['ok'])
+            with c1:
+                st.metric(label="Accuracy", value=f"{acc:.3f}" if acc is not None else "N/A")
+            with c2:
+                st.metric(label="Precision", value=f"{prec:.3f}" if prec is not None else "N/A")
+            with c3:
+                st.metric(label="Recall", value=f"{rec:.3f}" if rec is not None else "N/A")
 
-            # if eval_data contains arrays we can plot ROC / confusion
             y_true = eval_data.get('y_true')
             y_score = eval_data.get('y_score') or eval_data.get('y_pred')
             if y_true is not None and y_score is not None:
                 try:
                     y_true = np.array(y_true)
                     y_score = np.array(y_score)
-                    fig_cm, ax_cm = plt.subplots(figsize=(3, 3))
+                    st.markdown("### Confusion matrix")
+                    fig_cm, ax_cm = plt.subplots(figsize=(4, 3))
                     y_pred_bin = (y_score >= spam_threshold).astype(int)
                     cm = metrics.confusion_matrix(y_true, y_pred_bin)
                     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax_cm)
@@ -308,8 +289,9 @@ def main():
                     ax_cm.set_ylabel('true')
                     st.pyplot(fig_cm)
 
+                    st.markdown("### ROC & Precision-Recall")
                     fpr, tpr, _ = metrics.roc_curve(y_true, y_score)
-                    fig_roc, ax_roc = plt.subplots(figsize=(3, 3))
+                    fig_roc, ax_roc = plt.subplots(figsize=(4, 3))
                     ax_roc.plot(fpr, tpr, label=f"AUC={metrics.auc(fpr,tpr):.3f}", color=PALETTE['primary'])
                     ax_roc.plot([0, 1], [0, 1], linestyle='--', color='gray')
                     ax_roc.set_xlabel('FPR')
@@ -317,28 +299,27 @@ def main():
                     ax_roc.legend()
                     st.pyplot(fig_roc)
 
-                    # precision-recall
                     precision, recall, _ = metrics.precision_recall_curve(y_true, y_score)
                     ap = metrics.average_precision_score(y_true, y_score)
-                    fig_pr, ax_pr = plt.subplots(figsize=(3, 3))
+                    fig_pr, ax_pr = plt.subplots(figsize=(4, 3))
                     ax_pr.plot(recall, precision, color=PALETTE['accent'], label=f"AP={ap:.3f}")
                     ax_pr.set_xlabel('Recall')
                     ax_pr.set_ylabel('Precision')
                     ax_pr.legend()
                     st.pyplot(fig_pr)
 
-                    # Model Performance (Test) and Threshold sweep
                     st.markdown("### Model Performance (Test)")
                     try:
                         report = metrics.classification_report(y_true, (y_score >= spam_threshold).astype(int), output_dict=True)
                         report_df = pd.DataFrame(report).transpose()
                         st.dataframe(report_df)
                     except Exception:
-                        pass
+                        st.info("Unable to build classification report.")
 
                     try:
                         thresh_df = threshold_sweep_metrics(y_true, y_score)
-                        fig_ts, ax_ts = plt.subplots(figsize=(5, 3))
+                        st.markdown("### Threshold sweep (precision / recall / f1)")
+                        fig_ts, ax_ts = plt.subplots(figsize=(6, 3))
                         ax_ts.plot(thresh_df['threshold'], thresh_df['precision'], label='precision', color=PALETTE['primary'])
                         ax_ts.plot(thresh_df['threshold'], thresh_df['recall'], label='recall', color=PALETTE['accent'])
                         ax_ts.plot(thresh_df['threshold'], thresh_df['f1'], label='f1', color=PALETTE['danger'])
@@ -347,23 +328,26 @@ def main():
                         ax_ts.legend()
                         st.pyplot(fig_ts)
 
-                        # show best f1
                         best = thresh_df.loc[thresh_df['f1'].idxmax()]
                         st.markdown(f"**Best F1:** {best['f1']:.3f} at threshold {best['threshold']:.3f}")
                         with st.expander('Threshold sweep table'):
                             st.dataframe(thresh_df.head(200))
                     except Exception:
-                        pass
+                        st.info("Unable to compute threshold sweep.")
                 except Exception:
-                    pass
+                    st.info("Error plotting evaluation arrays.")
 
-        st.markdown("---")
+    # Live inference tab: text input, predict button, batch run
+    with tab_infer:
         st.subheader("Live inference")
-        # text input area and sample quick-fill
+        selected = Path(models_dir) / model_choice if model_choice else None
+        if selected is None or not selected.exists():
+            st.info("No model selected — pick a .joblib artifact in the sidebar to enable live inference")
+
         if sample_choice:
-            text = st.text_area("Enter text to classify", value=sample_choice, height=120)
+            text = st.text_area("Enter text to classify", value=sample_choice, height=140)
         else:
-            text = st.text_area("Enter text to classify", height=120)
+            text = st.text_area("Enter text to classify", height=140)
 
         if st.button("Predict live"):
             if selected is None or not selected.exists():
@@ -375,16 +359,16 @@ def main():
                     if hasattr(m, 'predict_proba'):
                         score = float(m.predict_proba([text])[0][-1])
                         label = 'spam' if score >= spam_threshold else 'ham'
-                        color = PALETTE['danger'] if label == 'spam' else PALETTE['ok']
-                        st.markdown(f"**Predicted:** <span style='font-weight:700;color:{color}'>{label}</span> (score={score:.3f})", unsafe_allow_html=True)
+                        badge_class = 'badge-spam' if label == 'spam' else 'badge-ham'
+                        st.markdown(f"**Predicted:** <span class='badge {badge_class}'>{label.upper()}</span>  &nbsp; (score={score:.3f})", unsafe_allow_html=True)
                     else:
-                        pred = m.predict([text])[0]
-                        color = PALETTE['ok'] if str(pred).lower() != 'spam' else PALETTE['danger']
-                        st.markdown(f"**Predicted:** <span style='font-weight:700;color:{color}'>{pred}</span>", unsafe_allow_html=True)
+                        pred = str(m.predict([text])[0])
+                        is_spam = pred.lower() == 'spam'
+                        badge_class = 'badge-spam' if is_spam else 'badge-ham'
+                        st.markdown(f"**Predicted:** <span class='badge {badge_class}'>{pred.upper()}</span>", unsafe_allow_html=True)
                 except Exception as e:
                     st.error(f"Prediction failed: {e}")
 
-        # allow running model over packaged sample set and download
         if sample_df is not None and selected is not None and selected.exists():
             if st.button("Run model on packaged samples and download CSV"):
                 try:
@@ -405,7 +389,6 @@ def main():
                 except Exception as e:
                     st.error(f"Batch prediction failed: {e}")
 
-        # small footer
         st.markdown("---")
         st.markdown("Made with ❤️ — improve visuals or wire your own model artifacts in `ml/spam_classification/artifacts/`.")
 
