@@ -322,6 +322,104 @@ def main():
         eval_data = load_eval()
         if not eval_data:
             st.info("No saved evaluation found (eval_baseline.json). Train a model or place an evaluation file in artifacts/.")
+            # If no saved eval but a model artifact exists and labeled dataset is loaded,
+            # attempt a small on-the-fly evaluation on a sample to surface ROC/PR/thresholds.
+            if selected is not None and selected.exists() and df is not None and label_col in df.columns:
+                st.info("Saved eval not found — running on-the-fly evaluation using the selected model and dataset sample. This may take a moment.")
+                try:
+                    m = load_model(selected)
+                    texts = df[text_col].fillna("").astype(str).tolist()
+                    sample_n = min(len(texts), 500)
+                    texts_sample = texts[:sample_n]
+                    y_true_raw = df[label_col].iloc[:sample_n]
+                    # normalize y_true to binary 0/1 if possible
+                    try:
+                        # common cases: 'spam'/'ham' or 1/0
+                        if pd.api.types.is_string_dtype(y_true_raw):
+                            y_true = (y_true_raw.str.lower() == 'spam').astype(int).to_numpy()
+                        else:
+                            y_true = y_true_raw.astype(int).to_numpy()
+                    except Exception:
+                        # fallback: map unique highest-value to spam
+                        y_true = (y_true_raw != y_true_raw.iloc[0]).astype(int).to_numpy()
+
+                    y_score = None
+                    probs = None
+                    if hasattr(m, 'predict_proba'):
+                        probs = [float(p[-1]) for p in m.predict_proba(texts_sample)]
+                        y_score = np.array(probs)
+                    elif hasattr(m, 'decision_function'):
+                        # decision_function returns scores; some metrics accept these
+                        try:
+                            ds = m.decision_function(texts_sample)
+                            y_score = np.array(ds)
+                        except Exception:
+                            y_score = None
+
+                    # show confusion / ROC / PR depending on available scores
+                    if y_score is not None:
+                        try:
+                            st.markdown("### On-the-fly Confusion matrix (sample)")
+                            y_pred_bin = (y_score >= spam_threshold).astype(int)
+                            fig_cm, ax_cm = plt.subplots(figsize=(4, 3))
+                            cm = metrics.confusion_matrix(y_true, y_pred_bin)
+                            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax_cm)
+                            ax_cm.set_xlabel('pred')
+                            ax_cm.set_ylabel('true')
+                            st.pyplot(fig_cm)
+
+                            st.markdown("### On-the-fly ROC & Precision-Recall (sample)")
+                            fpr, tpr, _ = metrics.roc_curve(y_true, y_score)
+                            fig_roc, ax_roc = plt.subplots(figsize=(4, 3))
+                            ax_roc.plot(fpr, tpr, label=f"AUC={metrics.auc(fpr,tpr):.3f}", color=PALETTE['primary'])
+                            ax_roc.plot([0, 1], [0, 1], linestyle='--', color='gray')
+                            ax_roc.set_xlabel('FPR')
+                            ax_roc.set_ylabel('TPR')
+                            ax_roc.legend()
+                            st.pyplot(fig_roc)
+
+                            precision, recall, _ = metrics.precision_recall_curve(y_true, y_score)
+                            ap = metrics.average_precision_score(y_true, y_score)
+                            fig_pr, ax_pr = plt.subplots(figsize=(4, 3))
+                            ax_pr.plot(recall, precision, color=PALETTE['accent'], label=f"AP={ap:.3f}")
+                            ax_pr.set_xlabel('Recall')
+                            ax_pr.set_ylabel('Precision')
+                            ax_pr.legend()
+                            st.pyplot(fig_pr)
+
+                            # threshold sweep
+                            thresh_df = threshold_sweep_metrics(y_true, y_score)
+                            st.markdown("### Threshold sweep (precision / recall / f1) — sample")
+                            fig_ts, ax_ts = plt.subplots(figsize=(6, 3))
+                            ax_ts.plot(thresh_df['threshold'], thresh_df['precision'], label='precision', color=PALETTE['primary'])
+                            ax_ts.plot(thresh_df['threshold'], thresh_df['recall'], label='recall', color=PALETTE['accent'])
+                            ax_ts.plot(thresh_df['threshold'], thresh_df['f1'], label='f1', color=PALETTE['danger'])
+                            ax_ts.set_xlabel('threshold')
+                            ax_ts.set_ylabel('score')
+                            ax_ts.legend()
+                            st.pyplot(fig_ts)
+                            best = thresh_df.loc[thresh_df['f1'].idxmax()]
+                            st.markdown(f"**Best F1 (sample):** {best['f1']:.3f} at threshold {best['threshold']:.3f}")
+                        except Exception as e:
+                            st.info(f"On-the-fly evaluation failed: {e}")
+                    else:
+                        # try to at least show classification report using predict
+                        try:
+                            y_pred = m.predict(texts_sample)
+                            # normalize labels as above
+                            if pd.api.types.is_string_dtype(y_true_raw):
+                                # ensure y_pred comparable
+                                y_pred_bin = (pd.Series(y_pred).str.lower() == 'spam').astype(int).to_numpy()
+                            else:
+                                y_pred_bin = pd.Series(y_pred).astype(int).to_numpy()
+                            report = metrics.classification_report(y_true, y_pred_bin, output_dict=True)
+                            report_df = pd.DataFrame(report).transpose()
+                            st.markdown("### Classification report (sample)")
+                            st.dataframe(report_df)
+                        except Exception as e:
+                            st.info(f"Unable to run on-the-fly evaluation with selected model: {e}")
+                except Exception as e:
+                    st.info(f"On-the-fly evaluation error: {e}")
         else:
             acc = eval_data.get('accuracy')
             prec = eval_data.get('precision')
