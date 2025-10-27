@@ -5,6 +5,14 @@ running live inference with saved model artifacts.
 """
 
 from pathlib import Path
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn import metrics
+import joblib
+
 import json
 import re
 import io
@@ -102,23 +110,40 @@ def clean_steps_for_display(text: str):
 
 def main():
     # Page config and styles
-    st.set_page_config(page_title="Spam Classifier — Demo", layout="wide", page_icon="📧")
-    st.markdown(f"""
-        <style>
-        .stApp {{ background-color: #f7f9fb; }}
-        /* make primary buttons more visible */
-        .stButton>button, button[kind='primary']{{
-            background: {PALETTE['primary']} !important;
-            color: white !important;
-            border: none !important;
-            box-shadow: none !important;
-        }}
-        .title {{font-size:32px; font-weight:700;}}
-        .metric-box {{background: white; padding: 12px; border-radius:8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);}} 
-        .section-head {{font-size:18px; font-weight:700; margin-bottom:6px;}}
-        .muted {{color: {PALETTE['muted']};}}
-        </style>
-        """, unsafe_allow_html=True)
+    st.set_page_config(page_title="Spam Classifier — Demo", layout="wide", page_icon="📧") 
+    # Improved CSS for cleaner, consistent presentation 
+    st.markdown(f""" 
+        <style> 
+        /* page & container */ 
+        .stApp {{ background-color: #f5f7fa; color: #0f1724; }} 
+        .css-1d391kg {{ padding-top: 1rem; }} 
+ 
+        /* Buttons */ 
+        .stButton>button, button[kind='primary']{{ 
+            background: {PALETTE['primary']} !important; 
+            color: white !important; 
+            border-radius: 8px !important; 
+            padding: 6px 12px !important; 
+            box-shadow: none !important; 
+        }} 
+ 
+        /* cards / metric boxes */ 
+        .card {{ background: white; padding:12px; border-radius:10px; box-shadow: 0 4px 10px rgba(16,24,40,0.06); }} 
+        .section-head {{font-size:18px; font-weight:700; margin-bottom:6px; color:#0b2545}} 
+        .muted {{color: {PALETTE['muted']};}} 
+ 
+        /* badges for prediction */ 
+        .badge {{ display:inline-block; padding:6px 10px; border-radius:999px; color: white; font-weight:700; }} 
+        .badge-spam {{ background: {PALETTE['danger']}; }} 
+        .badge-ham  {{ background: {PALETTE['ok']}; }} 
+ 
+        /* smaller sidebar sample text */ 
+        .sidebar .stText {{ font-size: 13px; color: #123; }} 
+ 
+        /* dataframe tweaks */ 
+        .stDataFrame table {{ border-radius:8px; overflow:hidden; }} 
+        </style> 
+        """, unsafe_allow_html=True) 
 
     st.markdown("# 📧 Spam / Ham Classifier — Visualizations & Live Demo")
     st.markdown("Live demo using the processed SMS spam dataset. Upload your own CSV or use the repo data and a saved model artifact.")
@@ -250,8 +275,17 @@ def main():
             acc = eval_data.get('accuracy')
             prec = eval_data.get('precision')
             rec = eval_data.get('recall')
-            with st.container():
-                c1, c2, c3 = st.columns(3)
+            # show top-level metrics using Streamlit's native metric UI for compactness
+            c1, c2, c3 = st.columns(3)
+            try:
+                with c1:
+                    st.metric(label="Accuracy", value=f"{acc:.3f}" if acc is not None else "N/A")
+                with c2:
+                    st.metric(label="Precision", value=f"{prec:.3f}" if prec is not None else "N/A")
+                with c3:
+                    st.metric(label="Recall", value=f"{rec:.3f}" if rec is not None else "N/A")
+            except Exception:
+                # fallback to the old card if st.metric fails for some reason
                 with c1:
                     _metric_card('Accuracy', f"{acc:.4f}" if acc is not None else "N/A", color=PALETTE['primary'])
                 with c2:
