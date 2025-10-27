@@ -293,33 +293,33 @@ def main():
                     ax_pr.legend()
                     st.pyplot(fig_pr)
 
-                        # Model Performance (Test) and Threshold sweep
-                        st.markdown("### Model Performance (Test)")
-                        try:
-                            report = metrics.classification_report(y_true, (y_score >= spam_threshold).astype(int), output_dict=True)
-                            report_df = pd.DataFrame(report).transpose()
-                            st.dataframe(report_df)
-                        except Exception:
-                            pass
+                    # Model Performance (Test) and Threshold sweep
+                    st.markdown("### Model Performance (Test)")
+                    try:
+                        report = metrics.classification_report(y_true, (y_score >= spam_threshold).astype(int), output_dict=True)
+                        report_df = pd.DataFrame(report).transpose()
+                        st.dataframe(report_df)
+                    except Exception:
+                        pass
 
-                        try:
-                            thresh_df = threshold_sweep_metrics(y_true, y_score)
-                            fig_ts, ax_ts = plt.subplots(figsize=(5, 3))
-                            ax_ts.plot(thresh_df['threshold'], thresh_df['precision'], label='precision', color=PALETTE['primary'])
-                            ax_ts.plot(thresh_df['threshold'], thresh_df['recall'], label='recall', color=PALETTE['accent'])
-                            ax_ts.plot(thresh_df['threshold'], thresh_df['f1'], label='f1', color=PALETTE['danger'])
-                            ax_ts.set_xlabel('threshold')
-                            ax_ts.set_ylabel('score')
-                            ax_ts.legend()
-                            st.pyplot(fig_ts)
+                    try:
+                        thresh_df = threshold_sweep_metrics(y_true, y_score)
+                        fig_ts, ax_ts = plt.subplots(figsize=(5, 3))
+                        ax_ts.plot(thresh_df['threshold'], thresh_df['precision'], label='precision', color=PALETTE['primary'])
+                        ax_ts.plot(thresh_df['threshold'], thresh_df['recall'], label='recall', color=PALETTE['accent'])
+                        ax_ts.plot(thresh_df['threshold'], thresh_df['f1'], label='f1', color=PALETTE['danger'])
+                        ax_ts.set_xlabel('threshold')
+                        ax_ts.set_ylabel('score')
+                        ax_ts.legend()
+                        st.pyplot(fig_ts)
 
-                            # show best f1
-                            best = thresh_df.loc[thresh_df['f1'].idxmax()]
-                            st.markdown(f"**Best F1:** {best['f1']:.3f} at threshold {best['threshold']:.3f}")
-                            with st.expander('Threshold sweep table'):
-                                st.dataframe(thresh_df.head(200))
-                        except Exception:
-                            pass
+                        # show best f1
+                        best = thresh_df.loc[thresh_df['f1'].idxmax()]
+                        st.markdown(f"**Best F1:** {best['f1']:.3f} at threshold {best['threshold']:.3f}")
+                        with st.expander('Threshold sweep table'):
+                            st.dataframe(thresh_df.head(200))
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
