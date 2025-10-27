@@ -115,6 +115,18 @@ def train(args):
     print("Evaluating on test set...")
     y_pred = pipeline.predict(X_test)
 
+    # try to obtain continuous scores for ROC/PR if available
+    y_score = None
+    try:
+        if hasattr(pipeline, 'predict_proba'):
+            y_score = pipeline.predict_proba(X_test)[:, -1]
+        elif hasattr(pipeline.named_steps['clf'], 'predict_proba'):
+            y_score = pipeline.named_steps['clf'].predict_proba(pipeline.named_steps['tfidf'].transform(X_test))[:, -1]
+        elif hasattr(pipeline.named_steps['clf'], 'decision_function'):
+            y_score = pipeline.named_steps['clf'].decision_function(pipeline.named_steps['tfidf'].transform(X_test))
+    except Exception:
+        y_score = None
+
     acc = accuracy_score(y_test, y_pred)
     precision, recall, f1, _ = precision_recall_fscore_support(
         y_test, y_pred, average="weighted", zero_division=0
@@ -144,6 +156,9 @@ def train(args):
         "f1_weighted": float(f1),
         "classification_report": report,
         "confusion_matrix": cm,
+        # include raw arrays to enable ROC / PR plotting in Streamlit
+        "y_true": list(y_test.astype(str).apply(lambda x: 1 if str(x).strip().lower() == 'spam' else 0)),
+        "y_score": (list(map(float, y_score)) if y_score is not None else None),
         "n_train": int(len(X_train)),
         "n_test": int(len(X_test)),
     }
