@@ -28,6 +28,26 @@ PALETTE = {
 }
 
 
+def top_n_words_by_label(df, label_col='label', text_col='text', n=20):
+    res = {}
+    for lbl in sorted(df[label_col].dropna().unique()):
+        sub = df[df[label_col] == lbl]
+        res[lbl] = top_n_words(sub, text_col=text_col, n=n)
+    return res
+
+
+def threshold_sweep_metrics(y_true, y_score, thresholds=None):
+    thresholds = thresholds or np.linspace(0.0, 1.0, 101)
+    rows = []
+    for t in thresholds:
+        y_pred = (y_score >= t).astype(int)
+        p = metrics.precision_score(y_true, y_pred, zero_division=0)
+        r = metrics.recall_score(y_true, y_pred, zero_division=0)
+        f1 = metrics.f1_score(y_true, y_pred, zero_division=0)
+        rows.append({'threshold': float(t), 'precision': float(p), 'recall': float(r), 'f1': float(f1)})
+    return pd.DataFrame(rows)
+
+
 APP_DIR = Path(__file__).resolve().parent
 ARTIFACTS = APP_DIR / "artifacts"
 MODEL_PATH = ARTIFACTS / "svm_baseline.joblib"
@@ -83,16 +103,22 @@ def clean_steps_for_display(text: str):
 def main():
     # Page config and styles
     st.set_page_config(page_title="Spam Classifier — Demo", layout="wide", page_icon="📧")
-    st.markdown(
-        """
+    st.markdown(f"""
         <style>
-        .stApp { background-color: #f7f9fb; }
-        .title {font-size:32px; font-weight:700;}
-        .metric-box {background: white; padding: 12px; border-radius:8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);} 
+        .stApp {{ background-color: #f7f9fb; }}
+        /* make primary buttons more visible */
+        .stButton>button, button[kind='primary']{{
+            background: {PALETTE['primary']} !important;
+            color: white !important;
+            border: none !important;
+            box-shadow: none !important;
+        }}
+        .title {{font-size:32px; font-weight:700;}}
+        .metric-box {{background: white; padding: 12px; border-radius:8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);}} 
+        .section-head {{font-size:18px; font-weight:700; margin-bottom:6px;}}
+        .muted {{color: {PALETTE['muted']};}}
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        """, unsafe_allow_html=True)
 
     st.markdown("# 📧 Spam / Ham Classifier — Visualizations & Live Demo")
     st.markdown("Live demo using the processed SMS spam dataset. Upload your own CSV or use the repo data and a saved model artifact.")
@@ -181,6 +207,24 @@ def main():
                 plt.tight_layout()
                 st.pyplot(fig2)
 
+                # Token replacements (approximate)
+                st.markdown("**Token replacements in cleaned text (approximate)**")
+                sample_rows = df[text_col].dropna().astype(str).head(8).tolist()
+                cleaned = [clean_steps_for_display(t) for t in sample_rows]
+                clean_df = pd.DataFrame(cleaned)
+                st.table(clean_df)
+
+                # Top tokens by class
+                st.markdown("**Top tokens by class**")
+                try:
+                    by_label = top_n_words_by_label(df, label_col=label_col, text_col=text_col, n=15)
+                    for lbl, toks in by_label.items():
+                        st.markdown(f"*{lbl}*")
+                        tdf = pd.DataFrame(toks, columns=['token', 'count'])
+                        st.table(tdf)
+                except Exception:
+                    pass
+
     with right:
         st.subheader("Model & Live Inference")
         if model_choice:
@@ -248,6 +292,34 @@ def main():
                     ax_pr.set_ylabel('Precision')
                     ax_pr.legend()
                     st.pyplot(fig_pr)
+
+                        # Model Performance (Test) and Threshold sweep
+                        st.markdown("### Model Performance (Test)")
+                        try:
+                            report = metrics.classification_report(y_true, (y_score >= spam_threshold).astype(int), output_dict=True)
+                            report_df = pd.DataFrame(report).transpose()
+                            st.dataframe(report_df)
+                        except Exception:
+                            pass
+
+                        try:
+                            thresh_df = threshold_sweep_metrics(y_true, y_score)
+                            fig_ts, ax_ts = plt.subplots(figsize=(5, 3))
+                            ax_ts.plot(thresh_df['threshold'], thresh_df['precision'], label='precision', color=PALETTE['primary'])
+                            ax_ts.plot(thresh_df['threshold'], thresh_df['recall'], label='recall', color=PALETTE['accent'])
+                            ax_ts.plot(thresh_df['threshold'], thresh_df['f1'], label='f1', color=PALETTE['danger'])
+                            ax_ts.set_xlabel('threshold')
+                            ax_ts.set_ylabel('score')
+                            ax_ts.legend()
+                            st.pyplot(fig_ts)
+
+                            # show best f1
+                            best = thresh_df.loc[thresh_df['f1'].idxmax()]
+                            st.markdown(f"**Best F1:** {best['f1']:.3f} at threshold {best['threshold']:.3f}")
+                            with st.expander('Threshold sweep table'):
+                                st.dataframe(thresh_df.head(200))
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 
