@@ -4,6 +4,7 @@
 
 README 內容整理如下：專案概述、資料來源與處理、如何在本地建立環境與執行訓練／Streamlit、主要檔案說明、以及如何進行擴充或除錯。
 
+Demo Site：https://fwwnnhkhqptdjap54gqzjw.streamlit.app/
 ---
 
 ## 專案概述
