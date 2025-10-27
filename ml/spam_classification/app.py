@@ -269,21 +269,46 @@ def main():
                 plt.tight_layout()
                 st.pyplot(fig2)
 
-                # Token replacements (approximate)
-                st.markdown("### Token replacements in cleaned text (approximate)")
+                # Token replacements (approximate) — show as cards for readability
+                st.markdown("### Token replacements in cleaned text (preview)")
                 sample_rows = df[text_col].dropna().astype(str).head(8).tolist()
                 cleaned = [clean_steps_for_display(t) for t in sample_rows]
-                clean_df = pd.DataFrame(cleaned)
-                st.table(clean_df)
+                if cleaned:
+                    cols = st.columns(2)
+                    for i, item in enumerate(cleaned):
+                        with cols[i % 2]:
+                            st.markdown(
+                                """
+                                <div class='card'>
+                                  <div style='font-size:12px;color: #6c757d;'>Original</div>
+                                  <div style='margin-top:6px;color:#0b1724'>{orig}</div>
+                                  <hr style='opacity:0.06' />
+                                  <div style='font-size:12px;color: #6c757d;margin-top:6px;'>Cleaned preview</div>
+                                  <div style='margin-top:6px;font-weight:700;color:#0b2545'>{clean}</div>
+                                </div>
+                                """.format(orig=item['original'][:600].replace('\n',' '), clean=item['cleaned_preview']),
+                                unsafe_allow_html=True,
+                            )
+                else:
+                    st.info("No text rows available to preview replacements.")
 
-                # Top tokens by class
+                # Top tokens by class (or overall if no label)
                 st.markdown("### Top tokens by class")
                 try:
-                    by_label = top_n_words_by_label(df, label_col=label_col, text_col=text_col, n=15)
-                    for lbl, toks in by_label.items():
-                        st.markdown(f"**{lbl}**")
-                        tdf = pd.DataFrame(toks, columns=['token', 'count'])
-                        st.table(tdf)
+                    if label_col is None or label_col not in df.columns:
+                        st.info("No label column detected — showing overall top tokens.")
+                        top_all = top_n_words(df, text_col=text_col, n=20)
+                        if top_all:
+                            tdf = pd.DataFrame(top_all, columns=['token', 'count'])
+                            st.table(tdf)
+                        else:
+                            st.info("No tokens to display.")
+                    else:
+                        by_label = top_n_words_by_label(df, label_col=label_col, text_col=text_col, n=15)
+                        for lbl, toks in by_label.items():
+                            st.markdown(f"**{lbl}**")
+                            tdf = pd.DataFrame(toks, columns=['token', 'count'])
+                            st.table(tdf)
                 except Exception:
                     st.info("Failed to compute top tokens by class.")
 
